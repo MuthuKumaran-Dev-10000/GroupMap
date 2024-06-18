@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocation with Leaflet and Firebase</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(180deg, #ffffff, #f0f0f0);
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh; /* Ensures the body stretches to at least the viewport height */
+        }
+
+        h1 {
+            font-family: 'Montserrat', sans-serif;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .container {
+            width: 90%; /* Adjusted to 90% for better readability */
+            max-width: 800px;
+            margin: 20px;
+            background-color: rgba(255, 255, 255, 0.95); /* Increased opacity for better contrast */
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+        }
+
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        form label {
+            margin-right: 10px;
+        }
+
+        form input, form select, form button {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        form button {
+            background-color: #4CAF50; /* Green */
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        form button:hover {
+            background-color: #45a049; /* Darker green on hover */
+        }
+
+        button {
+            background-color: #007BFF; /* Blue */
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3; /* Darker blue on hover */
+        }
+
+        .user-marker {
+            width: 40px;
+            height: 40px;
+            background-color: #ff5733;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: white;
+            text-align: center;
+            font-size: 18px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .marker-icon {
+            width: 30px;
+            height: 45px;
+            text-align: center;
+            line-height: 45px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            background-color: red; /* Default color */
+            color: white;
+            font-weight: bold;
+            position: relative;
+        }
+
+        .marker-icon .marker-partition {
+            position: absolute;
+            width: 50%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background-color: inherit;
+        }
+
+        .custom-pin {
+            position: absolute;
+            width: 30px;
+            height: 45px;
+            text-align: center;
+            line-height: 45px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Geolocation with Leaflet and Firebase</h1>
+    <form id="userForm">
+        <label for="name">Name:</label>
+        <input type="text" id="name" required>
+        <label for="group">Group:</label>
+        <input type="text" id="group" required>
+        <label for="icon">Select Icon:</label>
+        <select id="icon">
+            <option value="https://example.com/icon1.png">Icon 1</option>
+            <option value="https://example.com/icon2.png">Icon 2</option>
+            <option value="https://example.com/icon3.png">Icon 3</option>
+        </select>
+        <button type="button" onclick="storeUserInfo()">Store Info</button>
+    </form>
+    <button onclick="initializeGeolocation()">Get Location</button><br>
+    <button onclick="findShortestPaths()">Find Shortest Path</button>
+
+    <div id="map"></div>
+    <table id="userTable">
+        <thead>
+            <tr>
+                <th>Marker</th>
+                <th>Name</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <p id="location"></p>
+
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Firebase JavaScript SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-database.js"></script>
+    <script>
+        // Your Firebase configuration
+        const firebaseConfig = {
+  apiKey: "AIzaSyAUDsiuORdVGYBKn1RzY4YdAxy7XHNJctQ",
+  authDomain: "group-map-8d70a.firebaseapp.com",
+  databaseURL: "https://group-map-8d70a-default-rtdb.firebaseio.com",
+  projectId: "group-map-8d70a",
+  storageBucket: "group-map-8d70a.appspot.com",
+  messagingSenderId: "789398341321",
+  appId: "1:789398341321:web:58bd9ed3995ab07fdb6f18",
+  measurementId: "G-CM34CZ80ZT"
+};
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let map;
+        let currentUser = null;
+        let colorIndex = 0;
+        const colors = ["red", "blue", "green", "orange", "purple", "yellow"];
+        const userMarkers = {};
+
+        function sanitizeInput(input) {
+            return input.replace(/[.#$/[\]]/g, '_');
+        }
+
+        function storeUserInfo() {
+            const name = sanitizeInput(document.getElementById('name').value);
+            const group = sanitizeInput(document.getElementById('group').value);
+            const icon = document.getElementById('icon').value;
+            if (name && group && icon) {
+                currentUser = { name, group, icon, color: colors[colorIndex % colors.length] };
+                colorIndex++;
+                database.ref('groups/' + group + '/users/' + name).set(currentUser);
+                alert('User info stored!');
+            } else {
+                alert('Please fill in all fields.');
+            }
+        }
+
+        function initializeGeolocation() {
+            if (navigator.permissions) {
+                navigator.permissions.query({ name: 'geolocation' }).then(function(permissionStatus) {
+                    if (permissionStatus.state === 'granted') {
+                        getLocation();
+                    } else if (permissionStatus.state === 'prompt') {
+                        navigator.geolocation.getCurrentPosition(getLocation, showError);
+                    } else {
+                        document.getElementById("location").innerText = "Geolocation permission denied.";
+                    }
+
+                    permissionStatus.onchange = function() {
+                        if (this.state === 'granted') {
+                            getLocation();
+                        } else {
+                            document.getElementById("location").innerText = "Geolocation permission denied.";
+                        }
+                    };
+                });
+            } else {
+                getLocation(); // Fallback for older browsers
+            }
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(showPosition, showError);
+                setInterval(updateCurrentUserLocation, 3000); // Update location every 3 seconds
+            } else {
+                document.getElementById("location").innerText = "Geolocation is not supported by this browser.";
+            }
+        }
+
+        function updateCurrentUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const latitude = position.coords.latitude;
+                    const longitude = position.coords.longitude;
+                    if (currentUser) {
+                        currentUser.latitude = latitude;
+                        currentUser.longitude = longitude;
+                        database.ref('groups/' + currentUser.group + '/users/' + currentUser.name).update({
+                            latitude: latitude,
+                            longitude: longitude
+                        });
+                    }
+                });
+            }
+        }
+
+        function showPosition(position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            document.getElementById("location").innerText = `Latitude: ${latitude}, Longitude: ${longitude}`;
+
+            if (!map) {
+                map = L.map('map').setView([latitude, longitude], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+            } else {
+                map.setView([latitude, longitude], 13);
+            }
+
+            const group = sanitizeInput(document.getElementById('group').value);
+            if (group) {
+                database.ref('groups/' + group + '/users').once('value', snapshot => {
+                    const userTableBody = document.getElementById('userTable').getElementsByTagName('tbody')[0];
+                    userTableBody.innerHTML = ''; // Clear the table
+                    const locationCount = {};
+                    snapshot.forEach(userSnapshot => {
+                        const userData = userSnapshot.val();
+                        if (userData.latitude && userData.longitude && userData.group === group) {
+                            const locationKey = `${userData.latitude},${userData.longitude}`;
+                            if (!locationCount[locationKey]) {
+                                locationCount[locationKey] = 0;
+                            }
+                            locationCount[locationKey]++;
+
+                            const offsetLat = userData.latitude + (locationCount[locationKey] - 1) * 0.0001;
+                            const offsetLng = userData.longitude + (locationCount[locationKey] - 1) * 0.0001;
+
+                            const iconHtml = `<div class="marker-icon" style="background-color:${userData.color};"><div class="marker-partition"></div><div class="marker-partition"></div></div>`;
+                            if (!userMarkers[userData.name]) {
+                                const marker = L.marker([offsetLat, offsetLng], {
+                                    icon: L.divIcon({
+                                        className: 'marker-icon',
+                                        html: `<div style="background-color:${userData.color}; border: 2px solid black; text-align: center; line-height: 20px;">${userData.name}</div>`
+                                    })
+                                }).addTo(map);
+                                userMarkers[userData.name] = marker;
+                            } else {
+                                userMarkers[userData.name].setLatLng([userData.latitude, userData.longitude]);
+                            }
+
+                            const row = userTableBody.insertRow();
+                            const cellMarker = row.insertCell(0);
+                            const cellName = row.insertCell(1);
+                            const cellLat = row.insertCell(2);
+                            const cellLon = row.insertCell(3);
+
+                            cellMarker.innerHTML = `<div class="user-marker" style="background-color:${userData.color};">${userData.name.charAt(0).toUpperCase()}</div>`;
+                            cellName.innerText = userData.name;
+                            cellLat.innerText = userData.latitude;
+                            cellLon.innerText = userData.longitude;
+                        }
+                    });
+                });
+            }
+        }
+
+        function showError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    document.getElementById("location").innerText = "User denied the request for Geolocation.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    document.getElementById("location").innerText = "Location information is unavailable.";
+                    break;
+                case error.TIMEOUT:
+                    document.getElementById("location").innerText = "The request to get user location timed out.";
+                    break;
+                case error.UNKNOWN_ERROR:
+                    document.getElementById("location").innerText = "An unknown error occurred.";
+                    break;
+            }
+        }
+
+        function findShortestPaths() {
+            if (!currentUser) {
+                alert('Please select a user.');
+                return;
+            }
+
+            const group = sanitizeInput(currentUser.group);
+
+            // Clear any existing routing layers
+            if (routingControl) {
+                routingControl.removeFrom(map);
+            }
+
+            // Fetch all users in the group
+            database.ref('groups/' + group + '/users').once('value', snapshot => {
+                const users = snapshot.val();
+
+                // Filter out users who have coordinates and are not the current user
+                const targetUsers = Object.values(users).filter(user => {
+                    return user.latitude && user.longitude && user.name !== currentUser.name;
+                });
+
+                if (targetUsers.length === 0) {
+                    alert('No other users in the group with location data.');
+                    return;
+                }
+
+                // Create an array to store routing control instances
+                const routingControls = [];
+
+                // Iterate through each target user
+                targetUsers.forEach((targetUser, index) => {
+                    const targetLatLng = L.latLng(targetUser.latitude, targetUser.longitude);
+
+                    // Create a unique color for each route
+                    const routeColor = colors[index % colors.length];
+
+                    // Create a routing control for this user
+                    const routing = L.Routing.control({
+                        waypoints: [
+                            L.latLng(currentUser.latitude, currentUser.longitude),
+                            targetLatLng
+                        ],
+                        routeWhileDragging: false,
+                        createMarker: function(i, waypoint, n) {
+                            if (i === 0) {
+                                // Start marker (currentUser)
+                                return L.marker(waypoint.latLng, {
+                                    draggable: false,
+                                    icon: L.divIcon({
+                                        className: 'user-marker',
+                                        html: currentUser.name.charAt(0).toUpperCase(),
+                                        iconSize: [25, 25],
+                                        iconAnchor: [12, 12],
+                                        popupAnchor: [0, -12]
+                                    })
+                                });
+                            } else if (i === n - 1) {
+                                // End marker (targetUser)
+                                return L.marker(waypoint.latLng, {
+                                    draggable: false,
+                                    icon: L.divIcon({
+                                        className: 'user-marker',
+                                        html: targetUser.name.charAt(0).toUpperCase(),
+                                        iconSize: [25, 25],
+                                        iconAnchor: [12, 12],
+                                        popupAnchor: [0, -12]
+                                    })
+                                });
+                            }
+                        },
+                        lineOptions: {
+                            styles: [{ color: routeColor, opacity: 0.6, weight: 4 }]
+                        }
+                    }).addTo(map);
+
+                    routingControls.push(routing);
+                });
+
+                // Store the routing controls to remove them later if needed
+                routingControl = L.layerGroup(routingControls).addTo(map);
+            });
+        }
+    </script>
+</body>
+</html>
+
